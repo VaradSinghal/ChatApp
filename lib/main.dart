@@ -1,6 +1,123 @@
-import 'package:flutter/material.dart';
+import 'dart:convert';
 
-void main() {
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:chatapp/controllers/appwrite_controllers.dart';
+import 'package:chatapp/controllers/fcm_controllers.dart';
+import 'package:chatapp/controllers/local_saved_data.dart';
+import 'package:chatapp/firebase_options.dart';
+import 'package:chatapp/providers/chat_provider.dart';
+import 'package:chatapp/providers/user_data_provider.dart';
+import 'package:chatapp/views/chat_page.dart';
+import 'package:chatapp/views/create_or_update_group.dart';
+import 'package:chatapp/views/explore_groups.dart';
+import 'package:chatapp/views/group_chat_page.dart';
+import 'package:chatapp/views/group_details.dart';
+import 'package:chatapp/views/home.dart';
+import 'package:chatapp/views/invite_members.dart';
+import 'package:chatapp/views/phone_login.dart';
+import 'package:chatapp/views/profile.dart';
+import 'package:chatapp/views/search_users.dart';
+import 'package:chatapp/views/update_profile.dart';
+
+
+import 'providers/group_message_provider.dart';
+
+final navigatorKey = GlobalKey<NavigatorState>();
+
+// function to listen to background changes
+Future _firebaseBackgroundMessage(RemoteMessage message) async {
+  if (message.notification != null) {
+    print("Some notification Received in background...");
+  }
+}
+
+class LifecycleEventHandler extends WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    String currentUserId =
+        Provider.of<UserDataProvider>(
+          navigatorKey.currentState!.context,
+          listen: false,
+        ).getUserId;
+    super.didChangeAppLifecycleState(state);
+
+    switch (state) {
+      case AppLifecycleState.resumed:
+        updateOnlineStatus(status: true, userId: currentUserId);
+        print("app resumed");
+        break;
+      case AppLifecycleState.inactive:
+        updateOnlineStatus(status: false, userId: currentUserId);
+        print("app inactive");
+
+        break;
+      case AppLifecycleState.paused:
+        updateOnlineStatus(status: false, userId: currentUserId);
+        print("app paused");
+
+        break;
+      case AppLifecycleState.detached:
+        updateOnlineStatus(status: false, userId: currentUserId);
+        print("app detched");
+
+        break;
+      case AppLifecycleState.hidden:
+        updateOnlineStatus(status: false, userId: currentUserId);
+        print("app hidden");
+    }
+  }
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  WidgetsBinding.instance.addObserver(LifecycleEventHandler());
+
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await LocalSavedData.init();
+
+  // initialize firebase messaging
+  await PushNotifications.init();
+
+  // initialize local notifications
+  await PushNotifications.localNotiInit();
+  // Listen to background notifications
+  FirebaseMessaging.onBackgroundMessage(_firebaseBackgroundMessage);
+
+  // on background notification tapped
+  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+    if (message.notification != null) {
+      print("Background Notification Tapped");
+      navigatorKey.currentState!.pushNamed("/message", arguments: message);
+    }
+  });
+
+  // to handle foreground notifications
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    String payloadData = jsonEncode(message.data);
+    print("Got a message in foreground");
+    if (message.notification != null) {
+      PushNotifications.showSimpleNotification(
+        title: message.notification!.title!,
+        body: message.notification!.body!,
+        payload: payloadData,
+      );
+    }
+  });
+
+  // for handling in terminated state
+  final RemoteMessage? message =
+      await FirebaseMessaging.instance.getInitialMessage();
+
+  if (message != null) {
+    print("Launched from terminated state");
+    Future.delayed(Duration(seconds: 1), () {
+      navigatorKey.currentState!.pushNamed("/home");
+    });
+  }
+
   runApp(const MyApp());
 }
 
@@ -10,113 +127,92 @@ class MyApp extends StatelessWidget {
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (context) => UserDataProvider()),
+        ChangeNotifierProvider(create: (context) => ChatProvider()),
+        ChangeNotifierProvider(create: (context) => GroupMessageProvider()),
+      ],
+      child: MaterialApp(
+        navigatorKey: navigatorKey,
+        title: 'FastChat App',
+        theme: ThemeData(
+          // This is the theme of your application.
+          //
+          // TRY THIS: Try running your application with "flutter run". You'll see
+          // the application has a purple toolbar. Then, without quitting the app,
+          // try changing the seedColor in the colorScheme below to Colors.green
+          // and then invoke "hot reload" (save your changes or press the "hot
+          // reload" button in a Flutter-supported IDE, or press "r" if you used
+          // the command line to start the app).
+          //
+          // Notice that the counter didn't reset back to zero; the application
+          // state is not lost during the reload. To reset the state, use hot
+          // restart instead.
+          //
+          // This works for code too, not just values: Most code changes can be
+          // tested with just a hot reload.
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueAccent),
+          useMaterial3: true,
+        ),
+        routes: {
+          "/": (context) => CheckUserSessions(),
+          "/login": (context) => PhoneLogin(),
+          "/home": (context) => HomePage(),
+          "/chat": (context) => ChatPage(),
+          "/profile": (context) => ProfilePage(),
+          "/update": (context) => UpdateProfile(),
+          "/search": (context) => SearchUsers(),
+          "/modify_group": (context) => CreateOrUpdateGroup(),
+          "/explore_groups": (context) => ExploreGroups(),
+          "/read_group_message": (context) => GroupChatPage(),
+          "/invite_members": (context) => InviteMembers(),
+          "/group_detail": (context) => GroupDetails(),
+          
+        },
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class CheckUserSessions extends StatefulWidget {
+  const CheckUserSessions({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<CheckUserSessions> createState() => _CheckUserSessionsState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+class _CheckUserSessionsState extends State<CheckUserSessions> {
+  @override
+  void initState() {
+    Future.delayed(Duration.zero, () {
+      Provider.of<UserDataProvider>(context, listen: false).loadDatafromLocal();
     });
+
+    checkSessions().then((value) {
+      final userName =
+          Provider.of<UserDataProvider>(context, listen: false).getUserName;
+      print("username :$userName");
+      if (value) {
+        if (userName != null && userName != "") {
+          Navigator.pushNamedAndRemoveUntil(context, "/home", (route) => false);
+        } else {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            "/update",
+            (route) => false,
+            arguments: {"title": "add"},
+          );
+        }
+      } else {
+        Navigator.pushNamedAndRemoveUntil(context, "/login", (route) => false);
+      }
+    });
+    super.initState();
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
-    );
+    return Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }
