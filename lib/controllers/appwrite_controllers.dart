@@ -18,14 +18,14 @@ Client client = Client()
     .setEndpoint('https://cloud.appwrite.io/v1')
     .setProject('67e2766d000354a6f80d')
     .setSelfSigned(
-        status: true); // For self signed certificates, only use for development
+        status: true); 
 
-const String db = "662e8faa0023aee32aa2";
-const String userCollection = "662e8fb6000c22d22075";
-const String chatCollection = "663005fa00219227b219";
-const String groupCollection = "66faffc6003b2312a584";
-const String groupMsgCollection = "66fb00c800016ed39134";
-const String storageBucket = "662faabe001a20bb87c6";
+const String db = "67e2a0940035585e9b95";//
+const String userCollection = "67e2a0c1003c690df9c1";//
+const String chatCollection = "67e2a0db0010e5bff958";
+const String groupCollection = "67e2a0e8003511879860";
+const String groupMsgCollection = "67e2a100000dd761fb9d";
+const String storageBucket = "67e2a11a001cf5ec8ba4";
 
 Account account = Account(client);
 final Databases databases = Databases(client);
